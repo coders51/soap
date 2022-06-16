@@ -22,7 +22,7 @@ defmodule Soap.Request.Params do
 
   @spec build_body(wsdl :: map(), operation :: String.t() | atom(), params :: map(), headers :: map(), opts :: any()) ::
           String.t()
-  def build_body(wsdl, operation, params, headers, opts) do
+  def build_body(wsdl, operation, params, headers, opts \\ []) do
     with {:ok, body} <- build_soap_body(wsdl, operation, params, opts),
          {:ok, header} <- build_soap_header(wsdl, operation, headers) do
       [header, body]
@@ -264,7 +264,7 @@ defmodule Soap.Request.Params do
   @spec get_action_namespace(wsdl :: map(), operation :: String.t()) :: String.t()
   defp get_action_namespace(wsdl, operation) do
     wsdl
-    |> get_action_with_namespace(operation)
+    |> get_action_with_namespace(operation, false)
     |> String.split(":")
     |> List.first()
   end
