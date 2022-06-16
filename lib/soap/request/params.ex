@@ -20,9 +20,10 @@ defmodule Soap.Request.Params do
   Returns xml-like string.
   """
 
-  @spec build_body(wsdl :: map(), operation :: String.t() | atom(), params :: map(), headers :: map()) :: String.t()
-  def build_body(wsdl, operation, params, headers) do
-    with {:ok, body} <- build_soap_body(wsdl, operation, params),
+  @spec build_body(wsdl :: map(), operation :: String.t() | atom(), params :: map(), headers :: map(), opts :: any()) ::
+          String.t()
+  def build_body(wsdl, operation, params, headers, opts) do
+    with {:ok, body} <- build_soap_body(wsdl, operation, params, opts),
          {:ok, header} <- build_soap_header(wsdl, operation, headers) do
       [header, body]
       |> add_envelope_tag_wrapper(wsdl, operation)
@@ -63,9 +64,7 @@ defmodule Soap.Request.Params do
         if Map.has_key?(val_map, k) do
           validate_param_attributes(val_map, k, v)
         else
-          "Invalid SOAP message:Invalid content was found starting with element '#{k}'. One of {#{
-            Enum.join(Map.keys(val_map), ", ")
-          }} is expected."
+          "Invalid SOAP message:Invalid content was found starting with element '#{k}'. One of {#{Enum.join(Map.keys(val_map), ", ")}} is expected."
         end
     end
   end
@@ -107,7 +106,7 @@ defmodule Soap.Request.Params do
 
   defp validate_type(k, _v, type = "dateTime"), do: type_error_message(k, type)
 
-  defp build_soap_body(wsdl, operation, params) do
+  defp build_soap_body(wsdl, operation, params, opts) do
     case params |> construct_xml_request_body |> validate_params(wsdl, operation) do
       {:error, messages} ->
         {:error, messages}
@@ -115,7 +114,7 @@ defmodule Soap.Request.Params do
       validated_params ->
         body =
           validated_params
-          |> add_action_tag_wrapper(wsdl, operation)
+          |> add_action_tag_wrapper(wsdl, operation, Keyword.get(opts, :use_name_in_action_tag))
           |> add_body_tag_wrapper
 
         {:ok, body}
@@ -184,13 +183,13 @@ defmodule Soap.Request.Params do
   @spec insert_tag_parameters(params :: list()) :: list()
   defp insert_tag_parameters(params) when is_list(params), do: params |> List.insert_at(1, nil)
 
-  @spec add_action_tag_wrapper(list(), map(), String.t()) :: list()
-  defp add_action_tag_wrapper(body, wsdl, operation) do
+  @spec add_action_tag_wrapper(list(), map(), String.t(), Boolean.t()) :: list()
+  defp add_action_tag_wrapper(body, wsdl, operation, use_name) do
     action_tag_attributes = handle_element_form_default(wsdl[:schema_attributes])
 
     action_tag =
       wsdl
-      |> get_action_with_namespace(operation)
+      |> get_action_with_namespace(operation, use_name)
       |> prepare_action_tag(operation)
 
     [element(action_tag, action_tag_attributes, body)]
@@ -215,8 +214,8 @@ defmodule Soap.Request.Params do
   defp prepare_action_tag("", operation), do: operation
   defp prepare_action_tag(action_tag, _operation), do: action_tag
 
-  @spec get_action_with_namespace(wsdl :: map(), operation :: String.t()) :: String.t()
-  defp get_action_with_namespace(wsdl, operation) do
+  @spec get_action_with_namespace(wsdl :: map(), operation :: String.t(), use_name :: Boolean.t()) :: String.t()
+  defp get_action_with_namespace(wsdl, operation, use_name) do
     case wsdl[:complex_types] do
       [] ->
         ""
@@ -225,8 +224,16 @@ defmodule Soap.Request.Params do
         wsdl[:complex_types]
         |> Enum.find(fn x -> x[:name] == operation end)
         |> handle_action_extractor_result(wsdl, operation)
+        |> maybe_replace_with_name(operation, use_name)
     end
   end
+
+  defp maybe_replace_with_name(action, operation, true) do
+    namespace = action |> String.split(":") |> List.first()
+    namespace <> ":" <> operation
+  end
+
+  defp maybe_replace_with_name(action, _operation, _), do: action
 
   @spec get_header_with_namespace(wsdl :: map(), operation :: String.t()) :: String.t()
   defp get_header_with_namespace(wsdl, operation) do
